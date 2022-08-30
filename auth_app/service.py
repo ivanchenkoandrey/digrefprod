@@ -130,10 +130,13 @@ def get_search_user_data(data: Dict, request: HttpRequest) -> Dict:
                            Q(profile__surname__istartswith=data) |
                            Q(profile__contacts__contact_id__istartswith=data))
     not_show_myself_filter = ~Q(profile__tg_name=request.user.profile.tg_name)
+    not_show_system_filter = ~Q(username='system')
     if request.data.get('show_myself') is True:
-        users_data = User.objects.filter(main_search_filters).distinct()
+        users_data = User.objects.filter(
+            main_search_filters & not_show_system_filter).distinct()
     else:
-        users_data = User.objects.filter(main_search_filters & not_show_myself_filter).distinct()
+        users_data = User.objects.filter(
+            main_search_filters & not_show_myself_filter & not_show_system_filter).distinct()
     return annotate_search_users_queryset(users_data)
 
 
