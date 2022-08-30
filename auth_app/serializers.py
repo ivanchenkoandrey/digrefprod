@@ -209,7 +209,7 @@ class TransactionFullSerializer(serializers.ModelSerializer):
 
     def get_can_user_cancel(self, obj):
         user_id = self.context.get('user').pk
-        return (obj.status == 'W'
+        return (obj.status in ['W', 'G', 'A']
                 and user_id == obj.sender.id
                 and (datetime.now(timezone.utc) - obj.created_at).seconds < settings.GRACE_PERIOD)
 
