@@ -157,6 +157,7 @@ class BurnThanksView(APIView):
         with transaction.atomic():
             for stat in stats:
                 if stat.distr_burnt == 0:
+                    logger.info(f"{stat}")
                     account = accounts.get(owner_id=stat.user.pk)
                     stat.distr_burnt = account.amount
             UserStat.objects.bulk_update(stats, ['distr_burnt'])
