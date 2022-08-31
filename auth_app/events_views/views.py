@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from rest_framework.authentication import (TokenAuthentication,
                                            SessionAuthentication)
 from rest_framework.permissions import IsAuthenticated
@@ -46,7 +48,7 @@ class EventListView(APIView):
             del event_type['record_type']
             event_data = {
                 "id": 0,
-                "time": transaction.updated_at,
+                "time": transaction.updated_at + timedelta(hours=3),
                 "event_type": event_type,
                 "transaction": {
                     "id": transaction.pk,
