@@ -154,7 +154,7 @@ class CustomTransactionQueryset(models.QuerySet):
         """
         queryset = (self
                     .select_related('sender__profile', 'recipient__profile')
-                    .filter((Q(sender=current_user) | (Q(recipient=current_user) & ~(Q(status='G'))))))
+                    .filter((Q(sender=current_user) | (Q(recipient=current_user) & ~(Q(status__in=['G', 'C', 'D']))))))
         return self.add_expire_to_cancel_field(queryset).order_by('-updated_at')
 
     def filter_to_use_by_controller(self):

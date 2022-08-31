@@ -33,7 +33,7 @@ class EventListView(APIView):
                 has_scope=True
             )
         public_transactions = (Transaction.objects.select_related('sender__profile', 'recipient__profile')
-                               .filter(is_public=True, status__in=['A', 'R'])
+                               .filter(is_public=True, status__in=['A', 'R'], )
                                .exclude(recipient=request.user))
         transactions_receiver_only = (Transaction.objects.select_related('sender__profile', 'recipient__profile')
                                       .filter(recipient=request.user, status__in=['A', 'R']))
