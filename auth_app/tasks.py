@@ -54,11 +54,9 @@ def validate_transactions_after_grace_period():
                 sender_frozen_account.transaction = _transaction
                 recipient_income_account.amount += amount
                 recipient_income_account.transaction = _transaction
-                sender_user_stat.distr_thanks += amount
                 recipient_user_stat.income_thanks += amount
                 _transaction.status = 'R'
                 _transaction.save(update_fields=['status'])
                 sender_frozen_account.save(update_fields=['amount', 'transaction'])
                 recipient_income_account.save(update_fields=['amount', 'transaction'])
-                sender_user_stat.save(update_fields=['distr_thanks'])
                 recipient_user_stat.save(update_fields=['income_thanks'])
