@@ -154,10 +154,6 @@ LOGGING = {
 }
 
 CELERY_BEAT_SCHEDULE = {
-    "make_log_message": {
-        "task": "auth_app.tasks.make_log_message",
-        "schedule": crontab(minute="*/15", hour="9-18", day_of_week="mon,tue,wed,thu,fri"),
-    },
     "validate_transactions_after_grace_period": {
         "task": "auth_app.tasks.validate_transactions_after_grace_period",
         "schedule": crontab(minute="*"),
