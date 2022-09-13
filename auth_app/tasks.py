@@ -4,6 +4,7 @@ import logging
 
 from django.core.mail import send_mail
 from django.core.management import call_command
+from utils.query_debugger import query_debugger
 
 from digrefserver.celery import app
 
@@ -27,6 +28,7 @@ def remove_reports():
 
 
 @app.task
+@query_debugger
 def validate_transactions_after_grace_period():
     from auth_app.models import Account, Transaction, UserStat
     from django.conf import settings

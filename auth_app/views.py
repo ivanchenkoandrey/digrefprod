@@ -13,10 +13,9 @@ from rest_framework.views import APIView
 
 from utils.accounts_data import processing_accounts_data
 from utils.custom_permissions import (IsSystemAdmin, IsOrganizationAdmin, IsDepartmentAdmin)
-from .models import Period, UserStat, Account, Transaction, Profile
+from .models import Period, UserStat, Account, Transaction
 from .serializers import (UserSerializer, SearchUserSerializer,
-                          PeriodSerializer, ProfileSerializer,
-                          ProfileAdminSerializer)
+                          PeriodSerializer)
 from .service import (get_search_user_data)
 
 User = get_user_model()
@@ -40,12 +39,19 @@ class ProfileView(APIView):
         return Response(profile_serializer.data)
 
 
-class GetProfileView(RetrieveAPIView):
+class RetrieveProfileView(RetrieveAPIView):
     authentication_classes = [authentication.SessionAuthentication,
                               authentication.TokenAuthentication]
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+
+
+class GetProfileView(RetrieveProfileView):
+    permission_classes = [IsAuthenticated]
+
+
+class GetProfileViewAdmin(RetrieveProfileView):
     permission_classes = [IsSystemAdmin | IsOrganizationAdmin | IsDepartmentAdmin]
-    queryset = Profile.objects.all()
-    serializer_class = ProfileAdminSerializer
 
 
 class UserBalanceView(APIView):
@@ -157,7 +163,6 @@ class BurnThanksView(APIView):
         with transaction.atomic():
             for stat in stats:
                 if stat.distr_burnt == 0:
-                    logger.info(f"{stat}")
                     account = accounts.get(owner_id=stat.user.pk)
                     stat.distr_burnt = account.amount
             UserStat.objects.bulk_update(stats, ['distr_burnt'])

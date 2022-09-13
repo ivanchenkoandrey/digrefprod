@@ -4,6 +4,7 @@ from pathlib import Path
 import environ
 from celery.schedules import crontab
 import auth_app.tasks
+from rest_framework.pagination import PageNumberPagination
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -79,15 +80,12 @@ AUTH_PASSWORD_VALIDATORS = [
         'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
     },
 ]
-
 LANGUAGE_CODE = 'ru'
 TIME_ZONE = 'Europe/Moscow'
 USE_I18N = True
 USE_L10N = True
 USE_TZ = True
-
 STATIC_URL = '/static/'
-
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 REST_FRAMEWORK = {
@@ -125,14 +123,6 @@ LOGGING = {
             'backupCount': 10,
             'formatter': 'simple',
         },
-        'db_file': {
-            'level': 'DEBUG',
-            'class': 'logging.handlers.RotatingFileHandler',
-            'filename': os.path.join(BASE_DIR, 'db_logs/db_queries.log'),
-            'maxBytes': 1024 * 50,
-            'backupCount': 10,
-            'formatter': 'simple',
-        },
     },
     'loggers': {
         'auth_app': {
@@ -145,9 +135,9 @@ LOGGING = {
             'level': 'INFO',
             'propagate': True,
         },
-        'django.db.backends': {
-            'handlers': ['db_file'],
-            'level': 'DEBUG',
+        'utils.query_debugger': {
+            'handlers': ['file'],
+            'level': 'INFO',
             'propagate': True,
         }
     }
@@ -157,10 +147,14 @@ CELERY_BEAT_SCHEDULE = {
     "validate_transactions_after_grace_period": {
         "task": "auth_app.tasks.validate_transactions_after_grace_period",
         "schedule": crontab(minute="*"),
+    },
+    "remove_reports": {
+        "task": "auth_app.tasks.remove_reports",
+        "schedule": crontab(minute="*"),
     }
 }
 
-GRACE_PERIOD = 60 * 60 * 2  # 2 часа
+GRACE_PERIOD = env.int('GRACE_PERIOD')
 ANONYMOUS_MODE = False
 
 DEFAULT_USER_PASSWORD = env('DEFAULT_USER_PASSWORD')
@@ -186,3 +180,5 @@ DATETIME_INPUT_FORMATS = [
     '%m/%d/%y %H:%M',  # '10/25/06 14:30'
     '%m/%d/%y',  # '10/25/06'
 ]
+
+TELEGRAM_BOT_AUTH_TOKEN = env('TELEGRAM_BOT_AUTH_TOKEN')

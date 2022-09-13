@@ -38,6 +38,13 @@ class Organization(models.Model):
         db_table = 'organizations'
 
 
+class EmployeeStatus(models.TextChoices):
+    OFFICE = 'O', 'В офисе'
+    DISTANT = 'D', 'Удалённо'
+    HOLIDAY = 'H', 'Отпуск'
+    SICK = 'S', 'На больничном'
+
+
 class Profile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     organization = models.ForeignKey(Organization, on_delete=models.SET_NULL, related_name='profileorganization',
@@ -54,6 +61,11 @@ class Profile(models.Model):
     first_name = CITextField(blank=True, null=True, verbose_name='Имя')
     middle_name = CITextField(blank=True, null=True, verbose_name='Отчество')
     nickname = CITextField(blank=True, null=True, verbose_name='Псевдоним')
+    status = models.CharField(max_length=1, choices=EmployeeStatus.choices,
+                              verbose_name='Статус сотрудника', null=True, blank=True)
+    timezone = models.PositiveSmallIntegerField(verbose_name='Разница во времени с МСК', null=True, blank=True)
+    date_of_birth = models.DateField(verbose_name='Дата рождения', null=True, blank=True)
+    job_title = CICharField(max_length=100, verbose_name='Должность', null=True, blank=True)
 
     def get_photo_url(self):
         if self.photo:
@@ -64,13 +76,19 @@ class Profile(models.Model):
     def get_surname(self):
         if self.surname:
             return self.surname
-        return None
+        return ''
+
+    @property
+    def get_middle_name(self):
+        if self.middle_name:
+            return self.middle_name
+        return ''
 
     @property
     def get_first_name(self):
         if self.first_name:
             return self.first_name
-        return None
+        return ''
 
     def to_json(self):
         return {field: getattr(self, field) for field in self.__dict__ if not field.startswith('_')}
@@ -153,7 +171,8 @@ class CustomTransactionQueryset(models.QuerySet):
         Возвращает список транзакций пользователя
         """
         queryset = (self
-                    .select_related('sender__profile', 'recipient__profile')
+                    .select_related('sender__profile', 'recipient__profile', 'reason_def')
+                    .prefetch_related('_objecttags')
                     .filter((Q(sender=current_user) | (Q(recipient=current_user) & ~(Q(status__in=['G', 'C', 'D']))))))
         return self.add_expire_to_cancel_field(queryset).order_by('-updated_at')
 
@@ -162,7 +181,8 @@ class CustomTransactionQueryset(models.QuerySet):
         Возвращает список транзакций со статусом 'Ожидает подтверждения'
         """
         queryset = (self
-                    .select_related('sender__profile', 'recipient__profile')
+                    .select_related('sender__profile', 'recipient__profile', 'reason_def')
+                    .prefetch_related('_objecttags')
                     .filter(status='W'))
         return self.add_expire_to_cancel_field(queryset).order_by('-created_at')
 
@@ -172,7 +192,8 @@ class CustomTransactionQueryset(models.QuerySet):
         """
 
         queryset = (self
-                    .select_related('sender__profile', 'recipient__profile')
+                    .select_related('sender__profile', 'recipient__profile', 'reason_def')
+                    .prefetch_related('_objecttags')
                     .filter((Q(sender=current_user) | Q(recipient=current_user)) &
                             Q(created_at__gte=period.start_date) & Q(created_at__lte=period.end_date)
                             ))
@@ -198,7 +219,7 @@ class Transaction(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='Время создания')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='Время обновления состояния', null=True, blank=True)
     status = models.CharField(max_length=1, choices=TransactionStatus.choices, verbose_name='Состояние транзакции')
-    reason = CITextField(verbose_name='Обоснование')
+    reason = CITextField(verbose_name='Обоснование', null=True, blank=True)
     grace_timeout = models.DateTimeField(verbose_name='Время окончания периода возможной отмены', null=True, blank=True)
     organization = models.ForeignKey(Organization, on_delete=models.SET_NULL,
                                      related_name='organization_public_transactions',
@@ -212,6 +233,11 @@ class Transaction(models.Model):
                               blank=True,
                               verbose_name='Уровень публикации')
     photo = models.ImageField(blank=True, null=True, upload_to='transactions', verbose_name='Фотография')
+    reason_def = models.ForeignKey('Reason', on_delete=models.PROTECT, verbose_name='Типовое обоснование', null=True,
+                                   blank=True)
+
+    is_commentable = models.BooleanField(default=True,
+                                         verbose_name="Разрешение на добавление/изменение/удаления комментариев")
 
     def to_json(self):
         return {field: getattr(self, field) for field in self.__dict__ if not field.startswith('_')}
@@ -419,6 +445,256 @@ class Event(models.Model):
 
     def to_json(self):
         return {field: getattr(self, field) for field in self.__dict__ if not field.startswith('_')}
+
+
+class CustomCommentQueryset(models.QuerySet):
+    """
+    Объект, инкапсулирующий в себе логику кастомных запросов к БД
+    в рамках менеджера objects в инстансах модели Comment
+    """
+
+    def filter_by_transaction(self, transaction):
+        """
+        Возвращает список комментариев заданной транзакции
+        """
+        return Comment.objects.filter(transaction=transaction)
+
+
+class Comment(models.Model):
+    objects = CustomCommentQueryset.as_manager()
+
+    # id: идентификатор - создается автоматически
+    transaction = models.ForeignKey(Transaction, related_name="comments", on_delete=models.SET_NULL,
+                                    null=True, blank=True, verbose_name="Транзакция")
+    user = models.ForeignKey(User, related_name='comment', on_delete=models.CASCADE,
+                             verbose_name='Владелец Комментария')
+    date_created = models.DateTimeField(null=True, verbose_name="Дата создания")
+    date_last_modified = models.DateTimeField(null=True, verbose_name="Дата последнего изменения")
+    # date_deleted = models.DateTimeField(verbose_name="Дата удаления")
+    is_last_comment = models.BooleanField(null=True, verbose_name="Последний комментарий в транзакции")
+    previous_comment = models.ForeignKey("Comment", null=True, related_name='next_comment', on_delete=models.CASCADE,
+                             verbose_name='Ссылка на предыдущий комментарий')
+    text = models.CharField(max_length=50, null=True, blank=True, verbose_name="Текст")
+    picture = models.ImageField(blank=True, null=True, upload_to='comment_pictures', verbose_name='Картинка Комментария')
+
+    def to_json(self):
+        return {field: getattr(self, field) for field in self.__dict__ if not field.startswith('_')}
+
+    def __str__(self):
+        return self.text
+
+    class Meta:
+        db_table = 'comments'
+
+
+class LikeKind(models.Model):
+    # id: идентификатор - создается автоматически
+
+    code = models.TextField(verbose_name="Код Типа Лайка", null=True)
+    name = models.TextField(verbose_name="Название Типа Лайка")
+    icon = models.ImageField(blank=True, null=True, upload_to='icons', verbose_name='Пиктограмма')
+
+    def to_json(self):
+        return {field: getattr(self, field) for field in self.__dict__ if not field.startswith('_')}
+
+    def get_icon_url(self):
+        if self.icon:
+            return f"{self.icon.url}"
+        return None
+
+    class Meta:
+        db_table = 'like_kind'
+
+
+class CustomLikeQueryset(models.QuerySet):
+    """
+    Объект, инкапсулирующий в себе логику кастомных запросов к БД
+    в рамках менеджера objects в инстансах модели Comment
+    """
+
+    def filter_by_transaction(self, transaction):
+        """
+        Возвращает список комментариев заданной транзакции
+        """
+        return Like.objects.filter(transaction=transaction, is_liked=True)
+
+    def filter_by_transaction_and_like_kind(self, transaction, like_kind):
+        """
+        Возвращает список комментариев заданной транзакции и типа лайка
+        """
+        return Like.objects.filter(transaction=transaction, like_kind=like_kind, is_liked=True)
+
+    def filter_by_user(self, user):
+        """
+        Возвращает список комментариев заданного пользователя
+        """
+        return Like.objects.filter(user=user, is_liked=True)
+
+    def filter_by_user_and_like_kind(self, user, like_kind):
+        """
+        Возвращает список комментариев заданного пользователя и типа лайка
+        """
+        return Like.objects.filter(user=user, like_kind=like_kind, is_liked=True)
+
+
+class Like(models.Model):
+    # id: идентификатор - создается автоматически
+
+    objects = CustomLikeQueryset.as_manager()
+
+    like_kind = models.ForeignKey(LikeKind, related_name='like', on_delete=models.CASCADE,
+                             verbose_name='Тип лайка')
+    is_liked = models.BooleanField(default=False, verbose_name="Выставлен")
+    date_created = models.DateTimeField(verbose_name="Дата выставления лайка")
+    date_deleted = models.DateTimeField(null=True, blank=True, default=None, verbose_name="Дата отзыва лайка")
+    user = models.ForeignKey(User, related_name='like', on_delete=models.CASCADE,
+                             verbose_name='Владелец Лайка')
+    transaction = models.ForeignKey(Transaction, related_name="likes", on_delete=models.CASCADE,
+                                    verbose_name="Транзакция")
+
+    def to_json(self):
+        return {field: getattr(self, field) for field in self.__dict__ if not field.startswith('_')}
+
+    class Meta:
+        db_table = 'likes'
+
+
+class LikeStatistics(models.Model):
+    transaction = models.ForeignKey(Transaction, related_name='like_statistics', on_delete=models.SET_NULL,
+                                    null=True, blank=True, verbose_name='Транзакция')
+    like_counter = models.IntegerField(verbose_name='Количество лайков')
+    like_kind = models.ForeignKey(LikeKind, related_name='like_statistics', on_delete=models.SET_NULL,
+                                  null=True, blank=True, verbose_name='Тип лайка')
+    last_change_at = models.DateTimeField(verbose_name='Время последнего изменения количества лайков типа Лайк',
+                                          null=True, blank=True)
+    class Meta:
+        db_table = 'like_statistics'
+
+
+class LikeCommentStatistics(models.Model):
+    transaction = models.ForeignKey(Transaction, related_name='like_comment_statistics', on_delete=models.SET_NULL,
+                                    null=True, blank=True, verbose_name='Транзакция')
+
+    first_comment = models.ForeignKey("Comment", related_name='first_comment_statistics', on_delete=models.SET_NULL,
+                                      null=True, blank=True, verbose_name='Первый комментарий')
+    last_comment = models.ForeignKey("Comment", related_name='last_comment_statistics', on_delete=models.SET_NULL,
+                                     null=True, blank=True, verbose_name='Последний комментарий')
+    last_event_comment = models.ForeignKey("Comment", related_name='last_event_comment_statistics',
+                                           blank=True, on_delete=models.SET_NULL, null=True,
+                                           verbose_name='Последний добавленный или измененный комментарий')
+    last_like_or_comment_change_at = models.DateTimeField(verbose_name='Время последнего изменения количества лайков или последнего добавления/изменения комментария',
+                                                          null=True, blank=True)
+    comment_counter = models.IntegerField(verbose_name='Количество комментариев', default=0)
+    # TODO
+    # is_commentable = models.BooleanField(default=True, verbose_name="Разрешение на добавление/изменение/удаления комментариев")
+
+    class Meta:
+        db_table = 'like_comment_statistics'
+
+class Tag(models.Model):
+    created_at = models.DateTimeField(verbose_name='Время создания', auto_now_add=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, verbose_name='Пользователь, создавший ценность',
+                                   null=True, blank=True, related_name='tag_created_by')
+    updated_at = models.DateTimeField(verbose_name='Время обновления', auto_now=True, null=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, verbose_name='Пользователь, изменивший ценность',
+                                   null=True, blank=True, related_name='tag_updated_by')
+    flags = models.CharField(max_length=10, default="A", verbose_name="Флаги состояния", null=True, blank=True)
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE,
+                                     verbose_name='Подразделение (область видимости)', null=True, blank=True)
+    time_from = models.DateTimeField(verbose_name='Начало периода действия', null=True, blank=True)
+    time_to = models.DateTimeField(verbose_name='Окончание периода действия', null=True, blank=True)
+    name = CICharField(max_length=100, verbose_name="Отображаемый текст тега")
+    info = models.TextField(verbose_name="Пояснительный текст тега", null=True, blank=True)
+    pict = models.ImageField(upload_to='tags', verbose_name="Пиктограмма", null=True, blank=True)
+
+    def get_pict_url(self):
+        if self.pict:
+            return f"{self.pict.url}"
+        return None
+
+    class Meta:
+        db_table = 'tags'
+        verbose_name = "Ценности"
+
+
+class Reason(models.Model):
+    created_at = models.DateTimeField(verbose_name='Время создания', auto_now_add=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, related_name='reason_created_by',
+                                   verbose_name='Пользователь, добавивший типовое обоснование', null=True, blank=True)
+    updated_at = models.DateTimeField(verbose_name='Время обновления', auto_now=True, null=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, related_name='reason_updated_by',
+                                   verbose_name='Пользователь, изменивший типовое обоснование', null=True, blank=True)
+    flags = models.CharField(max_length=10, default="A", verbose_name="Флаги состояния", null=True, blank=True)
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE,
+                                     verbose_name='Подразделение (область видимости)', null=True, blank=True)
+    time_from = models.DateTimeField(verbose_name='Начало периода действия', null=True, blank=True)
+    time_to = models.DateTimeField(verbose_name='Окончание периода действия', null=True, blank=True)
+    data = CITextField(verbose_name="Текст типового обоснования")
+    tags = models.ManyToManyField(Tag, related_name='reasons', through='ReasonByTag')
+
+    class Meta:
+        db_table = 'reasons'
+        verbose_name = "Типовые обоснования"
+
+
+class ReasonByTag(models.Model):
+    created_at = models.DateTimeField(verbose_name='Время назначения', auto_now_add=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, related_name='reason_by_tag_created_by',
+                                   verbose_name='Пользователь, назначивший типовое обоснование ценности', null=True,
+                                   blank=True)
+    updated_at = models.DateTimeField(verbose_name='Время изменения', auto_now=True, null=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, related_name='reason_by_tag_updated_by',
+                                   verbose_name='Пользователь, изменивший назначение типового обоснования ценности',
+                                   null=True, blank=True)
+    flags = models.CharField(max_length=10, default="A", verbose_name="Флаги состояния", null=True, blank=True)
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE,
+                                     verbose_name='Подразделение (область видимости)', null=True, blank=True)
+    time_from = models.DateTimeField(verbose_name='Начало периода действия', null=True, blank=True)
+    time_to = models.DateTimeField(verbose_name='Окончание периода действия', null=True, blank=True)
+    tag = models.ForeignKey(Tag, on_delete=models.CASCADE, verbose_name='Ценность')
+    reason = models.ForeignKey(Reason, on_delete=models.CASCADE, verbose_name='Типовое обоснование')
+
+    class Meta:
+        db_table = 'reasons_by_tags'
+        verbose_name = "Назначения типовых обоснований ценностям"
+
+
+class ObjectTag(models.Model):
+    created_at = models.DateTimeField(verbose_name='Время назначения', auto_now_add=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, related_name='object_tag_created_by',
+                                   verbose_name='Пользователь, назначивший ценность', null=True, blank=True)
+    updated_at = models.DateTimeField(verbose_name='Время отключения', auto_now=True, null=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, related_name='object_tag_updated_by',
+                                   verbose_name='Пользователь, отключивший ценность', null=True, blank=True)
+    flags = models.CharField(max_length=10, default="A", verbose_name="Флаги состояния", null=True, blank=True)
+    tagged_object = models.ForeignKey(Transaction, on_delete=models.CASCADE, related_name='_objecttags', verbose_name='Объект')
+    tag = models.ForeignKey(Tag, on_delete=models.CASCADE, related_name='objecttags', verbose_name='Ценность')
+
+    class Meta:
+        db_table = 'object_tags'
+        verbose_name = "Назначения ценностей объектам"
+
+
+class TagLink(models.Model):
+    created_at = models.DateTimeField(verbose_name='Время назначения', auto_now_add=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, related_name='tag_link_created_by',
+                                   verbose_name='Пользователь, назначивший синоним ценности', null=True, blank=True)
+    updated_at = models.DateTimeField(verbose_name='Время изменения', auto_now=True, null=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, related_name='tag_link_updated_by',
+                                   verbose_name='Пользователь, изменивший назначение синонима ценности', null=True,
+                                   blank=True)
+    flags = models.CharField(max_length=10, default="A", verbose_name="Флаги состояния", null=True, blank=True)
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE,
+                                     verbose_name='Подразделение (область видимости)', null=True, blank=True)
+    time_from = models.DateTimeField(verbose_name='Начало периода действия', null=True, blank=True)
+    time_to = models.DateTimeField(verbose_name='Окончание периода действия', null=True, blank=True)
+    tag = models.ForeignKey(Tag, on_delete=models.CASCADE, verbose_name='Ценность', related_name='tag_link')
+    tag_basic = models.ForeignKey(Tag, on_delete=models.CASCADE,
+                                  verbose_name='Ценность - основной синоним', related_name='tag_link_basic')
+
+    class Meta:
+        db_table = 'tag_links'
+        verbose_name = "Синонимы ценностей"
 
 
 @receiver(post_save, sender=User)

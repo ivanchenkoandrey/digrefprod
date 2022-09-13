@@ -13,8 +13,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from auth_app.models import Transaction, Period
-from auth_app.serializers import (TransactionPartialSerializer,
-                                  TransactionFullSerializer, TransactionCancelSerializer)
+from auth_app.serializers import (TransactionPartialSerializer, TransactionFullSerializer,
+                                  TransactionCancelSerializer, TransactionStatisticsSerializer)
 from auth_app.service import (update_transactions_by_controller,
                               is_controller_data_is_valid,
                               cancel_transaction_by_user, is_cancel_transaction_request_is_valid,
@@ -36,6 +36,11 @@ class SendCoinView(CreateModelMixin, GenericAPIView):
         logger.info(f"Пользователь {request.user} отправил "
                     f"следующие данные для совершения транзакции: {request.data}")
         return self.create(request, *args, **kwargs)
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context.update({'request': self.request})
+        return context
 
 
 class CancelTransactionByUserView(UpdateAPIView):
@@ -139,6 +144,97 @@ class SingleTransactionByUserView(RetrieveAPIView):
         context = super().get_serializer_context()
         context.update({'user': self.request.user})
         return context
+
+
+class TransactionStatisticsAPIView(APIView):
+
+    """
+    Статистика комментариев и лайков указанной транзакции
+    """
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [authentication.SessionAuthentication,
+                              authentication.TokenAuthentication]
+
+    @classmethod
+    def post(cls, request, *args, **kwargs):
+        transaction_id = request.data.get('transaction_id')
+        include_code = request.data.get('include_code')
+        include_name = request.data.get('include_name')
+        include_first_comment = request.data.get('include_first_comment')
+        include_last_comment = request.data.get('include_last_comment')
+        include_last_event_comment = request.data.get('include_last_event_comment')
+
+        if include_name is None:
+            include_name = False
+        else:
+            if include_name == "False":
+                include_name = False
+            elif include_name == "True":
+                include_name = True
+            else:
+                return Response("Параметр include_name передан неверно. Введите True или False",
+                                status=status.HTTP_400_BAD_REQUEST)
+
+        if include_code is None:
+            include_code = False
+        else:
+            if include_code == "False":
+                include_code = False
+            elif include_code == "True":
+                include_code = True
+            else:
+                return Response("Параметр include_code передан неверно. Введите True или False",
+                                status=status.HTTP_400_BAD_REQUEST)
+
+        if include_first_comment is None:
+            include_first_comment = False
+        else:
+            if include_first_comment == "False":
+                include_first_comment = False
+            elif include_first_comment == "True":
+                include_first_comment = True
+            else:
+                return Response("Параметр include_first_comment передан неверно. Введите True или False",
+                                status=status.HTTP_400_BAD_REQUEST)
+
+        if include_last_comment is None:
+            include_last_comment = False
+        else:
+            if include_last_comment == "False":
+                include_last_comment = False
+            elif include_last_comment == "True":
+                include_last_comment = True
+            else:
+                return Response("Параметр include_last_comment передан неверно. Введите True или False",
+                                status=status.HTTP_400_BAD_REQUEST)
+
+        if include_last_event_comment is None:
+            include_last_event_comment = False
+        else:
+            if include_last_event_comment == "False":
+                include_last_event_comment = False
+            elif include_last_event_comment == "True":
+                include_last_event_comment = True
+            else:
+                return Response("Параметр include_last_event_comment передан неверно. Введите True или False",
+                                status=status.HTTP_400_BAD_REQUEST)
+
+        context = {"include_code": include_code, "include_name": include_name,
+                   "include_first_comment": include_first_comment,
+                   "include_last_comment": include_last_comment,
+                   "include_last_event_comment": include_last_event_comment}
+
+        if transaction_id is not None:
+            try:
+                transaction = Transaction.objects.get(id=transaction_id)
+                serializer = TransactionStatisticsSerializer([transaction], many=True, context=context)
+                return Response(serializer.data)
+            except Transaction.DoesNotExist:
+                return Response("Переданный идентификатор не относится "
+                                "ни к одной транзакции",
+                                status=status.HTTP_404_NOT_FOUND)
+        return Response("Не передан параметр transaction_id",
+                        status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(http_method_names=['GET'])

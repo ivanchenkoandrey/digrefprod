@@ -34,7 +34,7 @@ class EmitDistributionThanks(APIView):
                     emit_transaction = Transaction.objects.create(
                         sender=emit_user,
                         recipient=user,
-                        amount=300,
+                        amount=150,
                         reason='Эмиссия на начало периода',
                         status='R',
                         transaction_class='E',
