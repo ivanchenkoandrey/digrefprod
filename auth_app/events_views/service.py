@@ -93,5 +93,5 @@ def get_transactions_queryset(request):
                                   .prefetch_related('_objecttags')
                                   .filter(recipient=request.user, status__in=['A', 'R'])
                                   .defer('transaction_class', 'grace_timeout', 'organization_id', 'period', 'scope'))
-    extended_transactions = (public_transactions | transactions_receiver_only).distinct().order_by('-updated_at')
+    extended_transactions = (public_transactions | transactions_receiver_only).distinct().order_by('-updated_at')[:20]
     return extended_transactions
