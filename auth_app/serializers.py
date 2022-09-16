@@ -513,16 +513,18 @@ class TransactionPartialSerializer(serializers.ModelSerializer):
             if not from_income:
                 sender_distr_account.amount -= amount
                 sender_distr_account.transaction = transaction_instance
+                sender_user_stat.income_used_for_thanks += amount
                 sender_distr_account.save(update_fields=['amount', 'transaction'])
+                sender_user_stat.save(update_fields=['income_used_for_thanks'])
             else:
                 sender_income_account.amount -= amount
                 sender_income_account.transaction = transaction_instance
+                sender_user_stat.distr_thanks += amount
                 sender_income_account.save(update_fields=['amount', 'transaction'])
+                sender_user_stat.save(update_fields=['distr_thanks'])
             sender_frozen_account.amount += amount
             sender_frozen_account.transaction = transaction_instance
-            sender_user_stat.distr_thanks += amount
             sender_frozen_account.save(update_fields=['amount', 'transaction'])
-            sender_user_stat.save(update_fields=['distr_thanks'])
             if tags:
                 for tag in tags:
                     ObjectTag.objects.create(
