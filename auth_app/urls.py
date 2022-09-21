@@ -52,7 +52,7 @@ urlpatterns = [
     # transactions
     path('send-coins/', transaction_views.SendCoinView.as_view()),
     path('cancel-transaction/<int:pk>/', transaction_views.CancelTransactionByUserView.as_view()),
-    path('check-transaction-by-controller/', transaction_views.VerifyOrCancelTransactionByControllerView.as_view()),
+    # path('check-transaction-by-controller/', transaction_views.VerifyOrCancelTransactionByControllerView.as_view()),
     path('user/transactions/', transaction_views.TransactionsByUserView.as_view()),
     path('user/transactions/<int:pk>/', transaction_views.SingleTransactionByUserView.as_view()),
     path('user/transactions-by-period/<int:period_id>/', transaction_views.get_user_transaction_list_by_period),
@@ -90,8 +90,8 @@ urlpatterns = [
     path('logout/', LogoutView.as_view()),
     # comments
     path('create-comment/', comments_views.CreateCommentView.as_view()),
-    path('update-comment/', comments_views.UpdateCommentView.as_view()),
-    path('delete-comment/', comments_views.DeleteCommentView.as_view()),
+    path('update-comment/<int:pk>/', comments_views.UpdateCommentView.as_view()),
+    path('delete-comment/<int:pk>/', comments_views.DeleteCommentView.as_view()),
     path('get-comments/', comment_views.CommentListAPIView.as_view()),
     # likes
     path('press-like/', likes_views.PressLikeView.as_view()),

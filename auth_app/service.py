@@ -7,10 +7,12 @@ from django.db import transaction
 from django.db.models import Q, F
 from django.db.models.query import QuerySet
 from django.http import HttpRequest
+from rest_framework.exceptions import ValidationError
 
 from auth_app.models import Transaction, TransactionState, UserStat, Account
 from auth_app.serializers import TransactionCancelSerializer
-from utils.current_period import get_current_period
+from utils.current_period import get_period, get_current_period
+from utils.thumbnail_link import get_thumbnail_link
 
 User = get_user_model()
 
@@ -66,24 +68,36 @@ def is_controller_data_is_valid(data) -> bool:
 def update_transactions_by_controller(data: Dict,
                                       request: HttpRequest) -> List[Dict]:
     """Обновление контроллером статусов транзакций, счетов пользователей и их статистики"""
-    waiting_transactions_ids = (Transaction.objects
-                                .filter(status='W')
-                                .values_list('pk', flat=True))
-    already_updated_ids = []
+    period = get_period()
+    waiting_transactions = {_transaction.id: _transaction
+                            for _transaction in Transaction.objects.only(
+                                    'id', 'status', 'reason', 'updated_at',
+                                    'is_public', 'sender', 'recipient')}
+    waiting_transactions_ids = {_object.id for _object in waiting_transactions}
+
+    sender_recipient_ids = set()
+    for item in data:
+        if current_id := item.get('id') not in waiting_transactions_ids:
+            raise ValidationError(f'Нет транзакции, '
+                                  f'ожидающей подтверждения, с ID {current_id}')
+        sender_recipient_ids.add(waiting_transactions.get(current_id).sender_id)
+        sender_recipient_ids.add(waiting_transactions.get(current_id).recipient_id)
+
+    accounts = {(account.owner_id, account.account_type): account
+                for account in Account.objects.filter(owner_id__in=sender_recipient_ids).only(
+                        'account_type', 'amount', 'owner_id', 'transaction')}
+    user_stats = {stat.user_id: stat
+                  for stat in UserStat.objects.filter(period=period, user_id__in=sender_recipient_ids).only(
+                        'user_id', 'income_thanks', 'distr_thanks', 'distr_declined')}
     response = []
-    period = get_current_period()
     with transaction.atomic():
         for transaction_data in data:
             transaction_pk = transaction_data.get('id')
-            if transaction_pk in already_updated_ids:
-                raise AlreadyUpdatedByControllerError
-            if transaction_pk not in waiting_transactions_ids:
-                raise NotWaitingTransactionError
             transaction_status = transaction_data.get('status')
             reason = transaction_data.get('reason')
             if not reason:
                 reason = 'OK'
-            transaction_instance = Transaction.objects.get(pk=transaction_pk)
+            transaction_instance = waiting_transactions.get(transaction_pk)
             TransactionState.objects.create(
                 transaction=transaction_instance,
                 controller=request.user,
@@ -93,13 +107,11 @@ def update_transactions_by_controller(data: Dict,
             transaction_instance.status = transaction_status
             transaction_instance.is_public = True if transaction_status == 'A' else False
             transaction_instance.save(update_fields=['status', 'updated_at', 'is_public'])
-            sender_accounts = transaction_instance.sender.accounts.all()
-            recipient_accounts = transaction_instance.recipient.accounts.all()
-            sender_user_stat = UserStat.objects.get(user=transaction_instance.sender, period=period)
-            recipient_user_stat = UserStat.objects.get(user=transaction_instance.recipient, period=period)
-            recipient_income_account = recipient_accounts.filter(account_type='I').first()
-            sender_frozen_account = sender_accounts.filter(account_type='F').first()
-            sender_distr_account = sender_accounts.filter(account_type='D').first()
+            sender_user_stat = user_stats.get(transaction_instance.sender_id)
+            recipient_user_stat = user_stats.get(transaction_instance.recipient_id)
+            recipient_income_account = accounts.get((transaction_instance.recipient_id, 'I'))
+            sender_frozen_account = accounts.get((transaction_instance.sender_id, 'F'))
+            sender_distr_account = accounts.get((transaction_instance.sender_id, 'D'))
             amount = transaction_instance.amount
             if transaction_status == 'A':
                 recipient_income_account.amount += amount
@@ -118,7 +130,6 @@ def update_transactions_by_controller(data: Dict,
             sender_frozen_account.save(update_fields=['amount', 'transaction'])
             sender_distr_account.save(update_fields=['amount', 'transaction'])
             response.append({"transaction": transaction_pk, "status": transaction_status, "reason": reason})
-            already_updated_ids.append(transaction_pk)
     return response
 
 
@@ -137,7 +148,12 @@ def get_search_user_data(data: Dict, request: HttpRequest) -> Dict:
     else:
         users_data = User.objects.filter(
             main_search_filters & not_show_myself_filter & not_show_system_filter).distinct()
-    return annotate_search_users_queryset(users_data)
+    users_list = annotate_search_users_queryset(users_data)
+    for user in users_list:
+        photo = user.get('photo')
+        if photo is not None:
+            user['photo'] = get_thumbnail_link(photo)
+    return users_list
 
 
 def annotate_search_users_queryset(users_queryset: QuerySet) -> Dict:
