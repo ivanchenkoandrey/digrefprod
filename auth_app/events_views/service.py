@@ -70,7 +70,11 @@ def get_events_list(request):
             "last_like_comment_time": _transaction.last_like_comment_time,
             "user_liked": _transaction.user_liked,
             "user_disliked": _transaction.user_disliked,
-            "reactions": _transaction.like_statistics.values('id', code=F('like_kind__code'), counter=F('like_counter'))
+            "reactions": _transaction.like_statistics.values('id', code=F('like_kind__code'),
+                                                             counter=F('like_counter')),
+            "comments": _transaction.comments.values(name=F('user__profile__first_name'),
+                                                     surname=F('user__profile__surname'), content=F('text'),
+                                                     image=F('picture'), date=F('date_created'))
         }
         event_data = {
             "id": 0,
@@ -96,7 +100,7 @@ def get_request_user_tg_name(request):
 def get_transactions_queryset(request):
     public_transactions = (Transaction.objects
                            .select_related('sender__profile', 'recipient__profile')
-                           .prefetch_related('_objecttags', 'likes',
+                           .prefetch_related('_objecttags', 'likes', 'comments',
                                              'like_statistics', 'like_comment_statistics')
                            .filter(is_public=True, status__in=['A', 'R'])
                            .exclude(recipient=request.user)
@@ -104,11 +108,12 @@ def get_transactions_queryset(request):
                            .only(*TRANSACTION_FIELDS))
     transactions_receiver_only = (Transaction.objects
                                   .select_related('sender__profile', 'recipient__profile')
-                                  .prefetch_related('_objecttags', 'likes',
+                                  .prefetch_related('_objecttags', 'likes', 'comments',
                                                     'like_statistics', 'like_comment_statistics')
                                   .filter(recipient=request.user, status__in=['A', 'R'])
                                   .feed_version(request.user)
                                   .defer('transaction_class', 'grace_timeout', 'organization_id', 'period', 'scope'))
+
     extended_transactions = ((public_transactions | transactions_receiver_only)
                              .distinct('updated_at', 'id')
                              .order_by('-updated_at')[:20])
