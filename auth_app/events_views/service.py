@@ -36,7 +36,6 @@ def get_event_type(user, recipient, is_public, event_types):
     return event_types.get('Входящая транзакция')
 
 
-@query_debugger
 def get_events_list(request):
     request_user_tg_name = get_request_user_tg_name(request)
     transactions = get_transactions_queryset(request)
