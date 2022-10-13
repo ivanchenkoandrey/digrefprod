@@ -29,6 +29,9 @@ def create_challenge(creator, name, end_at, description, start_balance, photo, p
     else:
         parameter_id = int(parameter_id)
         parameter_value = int(parameter_value)
+        if parameter_id == 2:
+            if parameter_value > start_balance:
+                parameter_value = start_balance
         if parameter_id != 1 and parameter_id != 2:
             raise ValidationError("parameter_id должен принимать значение 1 или 2")
         parameters = [{"id": parameter_id, "value": parameter_value},
