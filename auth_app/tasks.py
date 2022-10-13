@@ -4,7 +4,6 @@ import logging
 
 from django.core.mail import send_mail
 from django.core.management import call_command
-from utils.query_debugger import query_debugger
 
 from digrefserver.celery import app
 
@@ -28,9 +27,9 @@ def remove_reports():
 
 
 @app.task
-@query_debugger
 def validate_transactions_after_grace_period():
-    from auth_app.models import Account, Transaction, UserStat
+    from auth_app.models import (Account, Event, Transaction, EventTypes,
+                                 TransactionState, UserStat)
     from django.conf import settings
     from django.db import transaction
     from datetime import datetime, timezone
@@ -41,11 +40,14 @@ def validate_transactions_after_grace_period():
     period = get_current_period()
     if period is None:
         return
-    transactions_to_check = [t for t in Transaction.objects.filter(status='G')
-                             .only('sender_id', 'recipient_id', 'status',
-                                   'amount', 'period', 'created_at')]
+    transactions_to_check = [t for t in Transaction.objects
+                             .select_related('sender_account', 'recipient_account')
+                             .filter(status='G')
+                             .only('sender_id', 'recipient_id', 'status', 'amount',
+                             'period', 'created_at', 'sender_account', 'recipient_account')]
     with transaction.atomic():
-        accounts = Account.objects.all()
+        accounts = (Account.objects.filter(organization_id=None, challenge_id=None)
+                    .only('owner_id', 'amount', 'account_type', 'transaction'))
         user_stats = (UserStat.objects
                       .filter(period=period)
                       .only('period', 'income_thanks'))
@@ -68,7 +70,16 @@ def validate_transactions_after_grace_period():
                 recipient_income_account.transaction = _transaction
                 recipient_user_stat.income_thanks += amount
                 _transaction.status = 'R'
-                _transaction.save(update_fields=['status', 'updated_at'])
+                _transaction.recipient_account = recipient_income_account
+                _transaction.save(update_fields=['status', 'updated_at', 'recipient_account'])
+                state = TransactionState.objects.create(transaction=_transaction, status='R')
+                Event.objects.create(
+                    event_type=EventTypes.objects.get(name='Новая публичная транзакция'),
+                    event_record_id=state.pk,
+                    event_object_id=_transaction.pk,
+                    object_selector='T',
+                    time=now
+                )
                 sender_frozen_account.save(update_fields=['amount', 'transaction'])
                 recipient_income_account.save(update_fields=['amount', 'transaction'])
                 recipient_user_stat.save(update_fields=['income_thanks'])

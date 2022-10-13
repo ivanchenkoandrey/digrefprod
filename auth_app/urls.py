@@ -1,23 +1,22 @@
 from django.contrib.auth.views import LogoutView
 from django.urls import path
 
+from auth_app.challenges_views import views as challenges_views
 from auth_app.accounts_views import views as account_views
 from auth_app.auth_views import views as auth_views
+from auth_app.comments_views import views as comments_views
+from auth_app.contacts_views import views as contact_views
 from auth_app.events_views import views as events_views
+from auth_app.likes_views import views as likes_views
 from auth_app.organization_views import views as organization_views
 from auth_app.periods_views import views as periods_views
 from auth_app.profile_views import views as profile_views
-from auth_app.transaction_views import views as transaction_views
-from auth_app.user_stat_views import views as stat_views
-from auth_app.contacts_views import views as contact_views
 from auth_app.tags_views import views as tag_views
 from auth_app.tg_bot_views import views as tg_bot_views
-from auth_app.comments_views import views as comment_views
-from auth_app.likes_views import views as likes_views
-from auth_app.comments_views import views as comments_views
-
+from auth_app.challenge_reports_views import views as challenge_reports_views
+from auth_app.transaction_views import views as transaction_views
+from auth_app.user_stat_views import views as stat_views
 from . import views
-
 
 urlpatterns = [
     # authentication
@@ -49,6 +48,18 @@ urlpatterns = [
     path('profile/<int:pk>/', views.GetProfileView.as_view()),
     path('get-user-profile-for-admin/<int:pk>/', views.GetProfileViewAdmin.as_view()),
 
+    # challenges
+    path('challenges/', challenges_views.ChallengeListView.as_view()),
+    path('challenges/<int:pk>/', challenges_views.ChallengeDetailView.as_view()),
+    path('challenge-winners/<int:pk>/', challenges_views.ChallengeWinnersList.as_view()),
+    path('challenge-contenders/<int:pk>/', challenges_views.ChallengeContendersList.as_view()),
+    path('check-new-reports/', challenges_views.CheckIfNewReportsExistView.as_view()),
+    path('challenge-result/<int:pk>/', challenges_views.GetUserChallengeReportView.as_view()),
+
+    path('create-challenge/', challenges_views.CreateChallengeView.as_view()),
+    path('create-challenge-report/', challenge_reports_views.CreateChallengeReportView.as_view()),
+    path('check-challenge-report/<int:pk>/', challenge_reports_views.CheckChallengeReportView.as_view()),
+
     # transactions
     path('send-coins/', transaction_views.SendCoinView.as_view()),
     path('cancel-transaction/<int:pk>/', transaction_views.CancelTransactionByUserView.as_view()),
@@ -59,6 +70,7 @@ urlpatterns = [
 
     # events
     path('feed/', events_views.EventListView.as_view()),
+    path('events/', events_views.FeedView.as_view()),
 
     # periods
     path('periods/', periods_views.PeriodListView.as_view()),
@@ -74,7 +86,7 @@ urlpatterns = [
     path('get-organization-departments/', organization_views.DepartmentsListView.as_view()),
 
     # tags
-    path('tags/', tag_views.TagListView.as_view()),
+    path('send-coins-settings/', tag_views.TagList.as_view()),
     path('tags/<int:pk>/', tag_views.TagDetailView.as_view()),
     path('reasons/', tag_views.ReasonListView.as_view()),
 
@@ -92,10 +104,10 @@ urlpatterns = [
     path('create-comment/', comments_views.CreateCommentView.as_view()),
     path('update-comment/<int:pk>/', comments_views.UpdateCommentView.as_view()),
     path('delete-comment/<int:pk>/', comments_views.DeleteCommentView.as_view()),
-    path('get-comments/', comment_views.CommentListAPIView.as_view()),
+    path('get-comments/', comments_views.CommentListAPIView.as_view()),
     # likes
     path('press-like/', likes_views.PressLikeView.as_view()),
-    path('get-likes-by-transaction/', likes_views.LikesTransactionListAPIView.as_view()),
+    path('get-likes-by-transaction/', likes_views.LikesListAPIView.as_view()),
     path('get-likes-by-user/', likes_views.LikesUserListAPIView.as_view()),
     # statistics
     path('get-transaction-statistics/', transaction_views.TransactionStatisticsAPIView.as_view()),

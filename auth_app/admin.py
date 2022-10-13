@@ -17,8 +17,8 @@ class OrganizationAdmin(admin.ModelAdmin):
 
 @admin.register(Account)
 class AccountAdmin(admin.ModelAdmin):
-    list_display = ['account_type', 'owner', 'organization', 'amount']
-    list_select_related = ['owner', 'organization']
+    list_display = ['account_type', 'owner', 'organization', 'amount', 'challenge']
+    list_select_related = ['owner', 'organization', 'challenge']
     list_filter = ['account_type', 'owner']
 
 
@@ -64,27 +64,44 @@ class UserRoleAdmin(admin.ModelAdmin):
 
 @admin.register(Comment)
 class CommentAdmin(admin.ModelAdmin):
-    list_display = ['transaction', 'user', 'text', 'picture', 'date_created']
+    list_display = ['content_type', 'object_id', 'content_object', 'user', 'text', 'picture', 'date_created']
     list_select_related = ['user']
-    list_filter = ['transaction', 'user']
+    list_filter = ['content_type', 'user']
 
 
 @admin.register(Like)
 class LikeAdmin(admin.ModelAdmin):
-    list_display = ['like_kind', 'user', 'transaction', 'is_liked', 'date_created']
+    list_display = ['content_type', 'object_id', 'content_object', 'like_kind', 'user', 'is_liked', 'date_created']
     list_select_related = ['user', 'like_kind']
-    list_filter = ['transaction', 'user']
+    list_filter = ['content_type', 'user']
+
 
 @admin.register(LikeKind)
 class LikeKindAdmin(admin.ModelAdmin):
     list_display = ['id', 'code', 'name', 'icon']
 
+
 @admin.register(LikeStatistics)
 class LikeStatisticsAdmin(admin.ModelAdmin):
-    list_display = ['transaction_id', 'like_kind_id', 'last_change_at', 'like_counter']
+    list_display = ['content_type', 'object_id', 'content_object', 'like_kind_id', 'last_change_at', 'like_counter']
+
 
 @admin.register(LikeCommentStatistics)
 class LikeCommentStatisticsAdmin(admin.ModelAdmin):
-    list_display = ['transaction_id', 'first_comment_id', 'last_comment_id', 'last_event_comment_id',
+    list_display = ['content_type', 'object_id', 'content_object', 'first_comment_id', 'last_comment_id', 'last_event_comment_id',
                     'comment_counter', 'last_like_or_comment_change_at']
 
+
+@admin.register(Challenge)
+class ChallengeAdmin(admin.ModelAdmin):
+    list_display = ['name', 'created_at', 'updated_at']
+
+
+@admin.register(ChallengeParticipant)
+class ChallengeParticipantAdmin(admin.ModelAdmin):
+    pass
+
+
+@admin.register(ChallengeReport)
+class ChallengeReportAdmin(admin.ModelAdmin):
+    pass

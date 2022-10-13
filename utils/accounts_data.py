@@ -19,14 +19,14 @@ def processing_accounts_data(user: User, period_id=None):
         period = get_object_or_404(Period, pk=period_id)
     else:
         period = get_period()
-    queryset = Account.objects.filter(account_type__in=['I', 'D', 'F'], owner=user)
+    queryset = Account.objects.filter(owner=user, challenge_id=None, organization_id=None)
     accounts_data = {f"{item.to_json().get('account_type')}": item.to_json() for item in queryset}
     user_stat = UserStat.objects.filter(user=user, period=period).first()
     user_profile_data = {
         "income": {
             "amount": accounts_data.get('I').get('amount'),
             "frozen": accounts_data.get('F').get('amount'),
-            "sent": 0 if not user_stat else user_stat.income_used_for_thanks,
+            "sent": 0 if not user_stat else user_stat.income_used_for_thanks + user_stat.sent_to_challenges_from_income,
             "received": 0 if not user_stat else user_stat.income_thanks,
             "cancelled": 0 if not user_stat else user_stat.income_declined
         }
@@ -37,7 +37,7 @@ def processing_accounts_data(user: User, period_id=None):
             "distr": {
                 "amount": accounts_data.get('D').get('amount'),
                 "frozen": accounts_data.get('F').get('amount'),
-                "sent": 0 if not user_stat else user_stat.distr_thanks,
+                "sent": 0 if not user_stat else user_stat.distr_thanks + user_stat.sent_to_challenges,
                 "received": 0 if not user_stat else user_stat.distr_initial,
                 "cancelled": 0 if not user_stat else user_stat.distr_declined,
                 "expire_date": None if not period else period.end_date

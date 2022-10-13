@@ -11,6 +11,7 @@ from rest_framework.mixins import CreateModelMixin
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from django.contrib.contenttypes.models import ContentType
 
 from auth_app.models import Transaction, Period
 from auth_app.serializers import (TransactionPartialSerializer, TransactionFullSerializer,
@@ -20,6 +21,8 @@ from auth_app.service import (update_transactions_by_controller,
                               cancel_transaction_by_user, is_cancel_transaction_request_is_valid,
                               AlreadyUpdatedByControllerError, NotWaitingTransactionError)
 from utils.custom_permissions import IsController
+from utils.paginates import process_offset_and_limit
+from utils.query_debugger import query_debugger
 
 logger = logging.getLogger(__name__)
 
@@ -108,15 +111,31 @@ class TransactionsByUserView(ListAPIView):
     permission_classes = [IsAuthenticated]
     authentication_classes = [authentication.SessionAuthentication,
                               authentication.TokenAuthentication]
-
+    queryset = Transaction.objects.all()
     serializer_class = TransactionFullSerializer
 
+    @query_debugger
     def get(self, request, *args, **kwargs):
-        logger.info(f"Пользователь {self.request.user} смотрит список транзакций")
-        return super().get(request, *args, **kwargs)
+        logger.info(f"Пользователь {request.user} смотрит список транзакций")
+        offset = request.GET.get('offset')
+        limit = request.GET.get('limit')
+        sent_only = request.GET.get('sent_only')
+        received_only = request.GET.get('received_only')
+        offset, limit = process_offset_and_limit(offset, limit)
+        if not any([self.is_parameter_valid(sent_only), self.is_parameter_valid(received_only)]):
+            transactions = Transaction.objects.filter_by_user_limited(request.user, offset, limit)
+        else:
+            transactions = (Transaction.objects.filter_by_user_sent_only(request.user, offset, limit)
+                            if self.is_parameter_valid(sent_only)
+                            else Transaction.objects.filter_by_user_received_only(request.user, offset, limit))
+        serializer = self.get_serializer(transactions, many=True)
+        return Response(serializer.data)
 
-    def get_queryset(self):
-        return Transaction.objects.filter_by_user(self.request.user).order_by('-updated_at')
+    @classmethod
+    def is_parameter_valid(cls, parameter):
+        if parameter in ('1', 'True', 'true'):
+            return True
+        return False
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
@@ -147,9 +166,8 @@ class SingleTransactionByUserView(RetrieveAPIView):
 
 
 class TransactionStatisticsAPIView(APIView):
-
     """
-    Статистика комментариев и лайков указанной транзакции
+    Статистика комментариев и лайков указанной модели
     """
     permission_classes = [IsAuthenticated]
     authentication_classes = [authentication.SessionAuthentication,
@@ -157,44 +175,42 @@ class TransactionStatisticsAPIView(APIView):
 
     @classmethod
     def post(cls, request, *args, **kwargs):
+        content_type = request.data.get('content_type')
+        object_id = request.data.get('object_id')
+        include_code = request.data.get('include_code', False)
+        include_name = request.data.get('include_name', False)
+        include_first_comment = request.data.get('include_first_comment', False)
+        include_last_comment = request.data.get('include_last_comment', False)
+        include_last_event_comment = request.data.get('include_last_event_comment', False)
         transaction_id = request.data.get('transaction_id')
-        include_code = request.data.get('include_code')
-        include_name = request.data.get('include_name')
-        include_first_comment = request.data.get('include_first_comment')
-        include_last_comment = request.data.get('include_last_comment')
-        include_last_event_comment = request.data.get('include_last_event_comment')
 
-        if include_name is None:
-            include_name = False
-        if include_code is None:
-            include_code = False
-        if include_first_comment is None:
-            include_first_comment = False
-        if include_last_comment is None:
-            include_last_comment = False
-        if include_last_event_comment is None:
-            include_last_event_comment = False
-
-        if type(include_code) != bool or type(include_name) != bool or type(include_first_comment) != bool or type(include_last_comment)\
-           != bool or type(include_last_event_comment) != bool:
+        if type(include_code) != bool or type(include_name) != bool or type(include_first_comment) != bool or type(
+                include_last_comment) \
+                != bool or type(include_last_event_comment) != bool:
             return Response("include_name, is_reverse_order, include_first_comment, include_last_comment и "
                             "include_last_event_comment должны быть типа bool", status=status.HTTP_400_BAD_REQUEST)
 
         context = {"include_code": include_code, "include_name": include_name,
                    "include_first_comment": include_first_comment,
                    "include_last_comment": include_last_comment,
-                   "include_last_event_comment": include_last_event_comment}
+                   "include_last_event_comment": include_last_event_comment
+                   }
 
-        if transaction_id is not None:
+        if content_type is None:
+            content_type = ContentType.objects.get_for_model(Transaction).id
+            object_id = transaction_id
+
+        if content_type is not None and object_id is not None:
+            model_class = ContentType.objects.get_for_id(content_type).model_class()
             try:
-                transaction = Transaction.objects.get(id=transaction_id)
-                serializer = TransactionStatisticsSerializer([transaction], many=True, context=context)
-                return Response(serializer.data[0])
-            except Transaction.DoesNotExist:
+                model_object = model_class.objects.get(id=object_id)
+                serializer = TransactionStatisticsSerializer({"content_type": content_type, "object_id": object_id}, context=context)
+                return Response(serializer.data)
+            except model_class.DoesNotExist:
                 return Response("Переданный идентификатор не относится "
                                 "ни к одной транзакции",
                                 status=status.HTTP_404_NOT_FOUND)
-        return Response("Не передан параметр transaction_id",
+        return Response("Не передан параметр content_type или object_id или transaction_id",
                         status=status.HTTP_400_BAD_REQUEST)
 
 
