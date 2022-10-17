@@ -30,8 +30,17 @@ class CreateChallengeReportSerializer(serializers.ModelSerializer):
 
             try:
                 participant = ChallengeParticipant.objects.get(challenge=challenge, user_participant=user)
-                if 'K' in challenge.challenge_mode:
+                if 'K' in challenge.challenge_mode and 'P' in participant.mode:
                     raise ValidationError("Данный участник уже отправил отчет для этого челленджа")
+
+                if 'O' in participant.mode and 'P' not in participant.mode:
+                    challenge.participants_count += 1
+                    challenge.save(update_fields=["participants_count"])
+                    mode = participant.mode
+                    mode.append('P')
+                    participant.mode = mode
+                    participant.save(update_fields=["mode"])
+
             except ChallengeParticipant.DoesNotExist:
                 participant = ChallengeParticipant.objects.create(
                     user_participant=user,
@@ -76,11 +85,11 @@ class CheckChallengeReportSerializer(serializers.ModelSerializer):
             raise ValidationError("Отчет уже отклонен или уже выдана награда")
         if reviewer != challenge_creator:
             raise ValidationError("Отправивший запрос не является создателем челленджа")
-        if 'C' in challenge_report.challenge.states:
+        if 'C' in challenge_report.challenge.states and state == 'W':
             raise ValidationError("Челлендж уже завершен")
-        if reason is None and state == 'D':
-            raise ValidationError("Не указана причина отклонения")
-        elif reason is not None and state == 'D':
+        # if reason is None and state == 'D':
+        #     raise ValidationError("Не указана причина отклонения")
+        if (reason is not None and reason != '') and state == 'D':
             content_type = "ChallengeReport"
             create_comment(content_type, challenge_report.id, reason, None, reviewer, None, None, None, None, None)
 

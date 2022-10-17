@@ -2,11 +2,12 @@ import logging
 from datetime import timedelta
 from typing import List, Dict
 
+from django.contrib.contenttypes.models import ContentType
 from django.db.models import F
-from django.db.models.functions import Coalesce
 
-from auth_app.models import EventTypes, Transaction, Profile, Event, Challenge, ChallengeReport, LikeStatistics, \
-    LikeCommentStatistics
+from auth_app.models import (EventTypes, Transaction, Profile,
+                             Event, Challenge, ChallengeReport,
+                             LikeStatistics, LikeCommentStatistics)
 from utils.challenges_logic import update_link_on_thumbnail, update_time
 from utils.thumbnail_link import get_thumbnail_link
 
@@ -50,6 +51,24 @@ def get_events_list(request, offset, limit):
     transactions = get_transactions_queryset(request, offset, limit)
     event_types = get_event_types_data()
     feed_data = []
+    content_type = ContentType.objects.get_for_model(Transaction)
+    like_comment_statistics = LikeCommentStatistics.objects.only('comment_counter').filter(content_type=content_type)
+    like_statistics = (LikeStatistics.objects.select_related('like_kind')
+                       .only('id', 'like_kind__code', 'like_counter')
+                       .filter(content_type=content_type))
+    transaction_to_comment_counter = {}
+    transaction_to_reactions = {}
+    for statistic in like_statistics:
+        if statistic.object_id in transaction_to_reactions:
+            reactions = transaction_to_reactions[statistic.object_id]
+            reactions.append({"id": statistic.id, 'code': statistic.like_kind.code, 'counter': statistic.like_counter})
+        else:
+            reactions = [{"id": statistic.id, 'code': statistic.like_kind.code, 'counter': statistic.like_counter}]
+        transaction_to_reactions[statistic.object_id] = reactions
+
+    for statistic in like_comment_statistics:
+        transaction_to_comment_counter[statistic.object_id] = statistic.comment_counter
+
     for _transaction in transactions:
         recipient_tg_name = _transaction.recipient.profile.tg_name
         is_public = _transaction.is_public
@@ -58,11 +77,7 @@ def get_events_list(request, offset, limit):
         event_type = get_event_type(request_user_tg_name, recipient_tg_name, is_public, event_types).to_json()
         sender = 'anonymous' if _transaction.is_anonymous else sender
         del event_type['record_type']
-        try:
-            comment_statistics = LikeCommentStatistics.objects.get(object_id=_transaction.pk)
-            comment_counter = comment_statistics.comment_counter
-        except LikeCommentStatistics.DoesNotExist:
-            comment_counter = 0
+
         transaction_info = {
             "id": _transaction.pk,
             "sender_id": None if _transaction.is_anonymous else _transaction.sender_id,
@@ -79,14 +94,20 @@ def get_events_list(request, offset, limit):
             "photo": f"{get_thumbnail_link(_transaction.photo.url)}" if _transaction.photo else None,
             "updated_at": _transaction.updated_at,
             "tags": _transaction._objecttags.values("tag_id", name=F("tag__name")),
-            "comments_amount": comment_counter,
             "last_like_comment_time": _transaction.last_like_comment_time,
             "user_liked": _transaction.user_liked,
             "user_disliked": _transaction.user_disliked,
-            "reactions": LikeStatistics.objects.filter(object_id=_transaction.pk).values('id',
-                                                                                         code=F('like_kind__code'),
-                                                                                         counter=F('like_counter'))
         }
+        if _transaction.pk in transaction_to_comment_counter:
+            transaction_info['comments_amount'] = transaction_to_comment_counter[_transaction.pk]
+        else:
+            transaction_info['comments_amount'] = 0
+
+        if _transaction.pk in transaction_to_reactions:
+            transaction_info['reactions'] = transaction_to_reactions[_transaction.pk]
+        else:
+            transaction_info['reactions'] = []
+
         event_data = {
             "id": 0,
             "time": _transaction.updated_at + timedelta(hours=3),
@@ -176,17 +197,33 @@ def get_transactions_from_events(transaction_id_array: List[int]) -> Dict:
                           'updated_at',
                           'is_anonymous',
                           'id')
-                    .values('id', 'amount', 'updated_at', 'sender_id',
-                            'recipient_id', 'is_anonymous',
-                            sender_tg_name=F('sender__profile__tg_name'),
-                            recipient_tg_name=F('recipient__profile__tg_name'),
-                            recipient_photo=F('recipient__profile__photo')))
+                    )
+    transactions = get_transactions_list_from_queryset(transactions)
     update_link_on_thumbnail(transactions, 'recipient_photo')
     update_time(transactions, 'updated_at')
     for tr in transactions:
         if tr.get('is_anonymous'):
             tr.update({'sender_id': None, 'sender_tg_name': None})
     return transactions
+
+
+def get_transactions_list_from_queryset(transactions):
+    transactions_list = []
+    for transaction in transactions:
+        transaction_data = {
+            "id": transaction.pk,
+            "amount": transaction.amount,
+            "updated_at": transaction.updated_at,
+            "sender_id": transaction.sender_id,
+            "recipient_id": transaction.recipient_id,
+            "is_anonymous": transaction.is_anonymous,
+            "sender_tg_name": transaction.sender.profile.tg_name,
+            "recipient_tg_name": transaction.recipient.profile.tg_name,
+            "recipient_photo": transaction.recipient.profile.get_photo_url(),
+            "tags": transaction._objecttags.values("tag_id", name=F("tag__name"))
+        }
+        transactions_list.append(transaction_data)
+    return transactions_list
 
 
 def get_challenges_from_events(challenge_id_array: List[int]) -> Dict:
