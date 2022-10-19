@@ -13,6 +13,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.contrib.contenttypes.models import ContentType
 
+from auth_app.comments_views.service import get_object
 from auth_app.models import Transaction, Period
 from auth_app.serializers import (TransactionPartialSerializer, TransactionFullSerializer,
                                   TransactionCancelSerializer, TransactionStatisticsSerializer)
@@ -183,7 +184,11 @@ class TransactionStatisticsAPIView(APIView):
         include_last_comment = request.data.get('include_last_comment', False)
         include_last_event_comment = request.data.get('include_last_event_comment', False)
         transaction_id = request.data.get('transaction_id')
-
+        challenge_id = request.data.get('challenge_id')
+        challenge_report_id = request.data.get('challenge_report_id')
+        content_type, object_id = get_object(content_type, object_id, None, transaction_id, challenge_id,
+                                             challenge_report_id, None)
+        content_type = content_type.id
         if type(include_code) != bool or type(include_name) != bool or type(include_first_comment) != bool or type(
                 include_last_comment) \
                 != bool or type(include_last_event_comment) != bool:
@@ -195,10 +200,6 @@ class TransactionStatisticsAPIView(APIView):
                    "include_last_comment": include_last_comment,
                    "include_last_event_comment": include_last_event_comment
                    }
-
-        if content_type is None:
-            content_type = ContentType.objects.get_for_model(Transaction).id
-            object_id = transaction_id
 
         if content_type is not None and object_id is not None:
             model_class = ContentType.objects.get_for_id(content_type).model_class()

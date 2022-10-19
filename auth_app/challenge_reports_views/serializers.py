@@ -14,11 +14,13 @@ from utils.current_period import get_current_period
 from utils.handle_image import change_filename
 from django.contrib.contenttypes.models import ContentType
 
+from utils.thumbnail_link import get_thumbnail_link
+
 
 class CreateChallengeReportSerializer(serializers.ModelSerializer):
     class Meta:
         model = ChallengeReport
-        fields = ['challenge', 'text', 'photo']
+        fields = ['challenge', 'text']
 
     def create(self, validated_data):
         request = self.context.get('request')
@@ -33,13 +35,8 @@ class CreateChallengeReportSerializer(serializers.ModelSerializer):
                 if 'K' in challenge.challenge_mode and 'P' in participant.mode:
                     raise ValidationError("Данный участник уже отправил отчет для этого челленджа")
 
-                if 'O' in participant.mode and 'P' not in participant.mode:
-                    challenge.participants_count += 1
-                    challenge.save(update_fields=["participants_count"])
-                    mode = participant.mode
-                    mode.append('P')
-                    participant.mode = mode
-                    participant.save(update_fields=["mode"])
+                if 'O' in participant.mode:
+                    raise ValidationError("Организатор не может участвовать в своем челлендже")
 
             except ChallengeParticipant.DoesNotExist:
                 participant = ChallengeParticipant.objects.create(
@@ -87,8 +84,6 @@ class CheckChallengeReportSerializer(serializers.ModelSerializer):
             raise ValidationError("Отправивший запрос не является создателем челленджа")
         if 'C' in challenge_report.challenge.states and state == 'W':
             raise ValidationError("Челлендж уже завершен")
-        # if reason is None and state == 'D':
-        #     raise ValidationError("Не указана причина отклонения")
         if (reason is not None and reason != '') and state == 'D':
             content_type = "ChallengeReport"
             create_comment(content_type, challenge_report.id, reason, None, reviewer, None, None, None, None, None)
@@ -126,6 +121,7 @@ class CheckChallengeReportSerializer(serializers.ModelSerializer):
                     transaction_class='W',
                     status='R',
                     period=current_period,
+                    challenge_report=self.instance
                 )
                 Event.objects.create(
                     event_type=EventTypes.objects.get(name='Новый победитель челленджа'),
@@ -179,3 +175,46 @@ class CheckChallengeReportSerializer(serializers.ModelSerializer):
         new_reports_exists = check_if_new_reports_exists(reviewer)
         validated_data['new_reports_exists'] = new_reports_exists
         return {"state": state, 'new_reports_exists': new_reports_exists}
+
+
+class ChallengeReportSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ChallengeReport
+        fields = ['challenge', 'user', 'text', 'photo']
+
+    challenge = serializers.SerializerMethodField()
+    user = serializers.SerializerMethodField()
+    text = serializers.SerializerMethodField()
+    photo = serializers.SerializerMethodField()
+
+    def get_challenge(self, obj):
+        challenge = {
+            "id": self.context.get('challenge').id,
+            "name": self.context.get('challenge').name
+        }
+        return challenge
+
+    def get_user(self, obj):
+        user = {
+            "id": self.context.get('user').id,
+            "tg_name": self.context.get('user_profile').tg_name,
+            "name": self.context.get('user_profile').first_name,
+            "surname": self.context.get('user_profile').surname,
+            'avatar': self.context.get('user_profile').get_photo_url()
+        }
+        if getattr(obj, "photo"):
+            photo = obj.photo.url
+        else:
+            photo = None
+        return user
+
+    def get_text(self, obj):
+        text = obj.text
+        return text
+
+    def get_photo(self, obj):
+        if getattr(obj, "photo"):
+            photo = obj.photo.url
+        else:
+            photo = None
+        return photo
