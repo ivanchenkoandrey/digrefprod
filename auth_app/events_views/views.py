@@ -24,6 +24,7 @@ class EventListView(APIView):
     permission_classes = [IsAuthenticated]
 
     @classmethod
+    @query_debugger
     def get(cls, request, *args, **kwargs):
         offset = request.GET.get('offset')
         limit = request.GET.get('limit')
@@ -37,12 +38,11 @@ class FeedView(APIView):
     permission_classes = [IsAuthenticated]
 
     @classmethod
-    @query_debugger
     def get(cls, request, *args, **kwargs):
         offset = request.GET.get('offset')
         limit = request.GET.get('limit')
         offset, limit = process_offset_and_limit(offset, limit)
-        return Response(get_events_data(offset, limit))
+        return Response(get_events_data(offset, limit, request.user.pk))
 
 
 class TransactionFeedView(APIView):
@@ -50,12 +50,11 @@ class TransactionFeedView(APIView):
     permission_classes = [IsAuthenticated]
 
     @classmethod
-    @query_debugger
     def get(cls, request, *args, **kwargs):
         offset = request.GET.get('offset')
         limit = request.GET.get('limit')
         offset, limit = process_offset_and_limit(offset, limit)
-        return Response(get_transactions_events_data(offset, limit))
+        return Response(get_transactions_events_data(offset, limit, request.user.pk))
 
 
 class ChallengeFeedView(APIView):
@@ -63,12 +62,11 @@ class ChallengeFeedView(APIView):
     permission_classes = [IsAuthenticated]
 
     @classmethod
-    @query_debugger
     def get(cls, request, *args, **kwargs):
         offset = request.GET.get('offset')
         limit = request.GET.get('limit')
         offset, limit = process_offset_and_limit(offset, limit)
-        return Response(get_challenges_events_data(offset, limit))
+        return Response(get_challenges_events_data(offset, limit, request.user.pk))
 
 
 class ReportFeedView(APIView):
@@ -76,12 +74,11 @@ class ReportFeedView(APIView):
     permission_classes = [IsAuthenticated]
 
     @classmethod
-    @query_debugger
     def get(cls, request, *args, **kwargs):
         offset = request.GET.get('offset')
         limit = request.GET.get('limit')
         offset, limit = process_offset_and_limit(offset, limit)
-        return Response(get_reports_events_data(offset, limit))
+        return Response(get_reports_events_data(offset, limit, request.user.pk))
 
 
 class EventTransactionDetailView(APIView):
@@ -91,7 +88,7 @@ class EventTransactionDetailView(APIView):
     @classmethod
     def get(cls, request, *args, **kwargs):
         pk = kwargs.get('pk')
-        transaction = get_events_transaction_queryset(pk)
+        transaction = get_events_transaction_queryset(pk, request.user.pk)
         if transaction is not None:
             if not transaction.is_public:
                 return Response({'status': 'Транзакция не является публичной'}, status=status.HTTP_403_FORBIDDEN)
