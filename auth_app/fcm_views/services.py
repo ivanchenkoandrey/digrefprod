@@ -12,4 +12,10 @@ def validate_token_request(device, token):
 
 
 def update_or_create_fcm_token(device, token, user):
-    return FCMToken.objects.update_or_create(device=device, token=token, user=user)
+    return FCMToken.objects.update_or_create(device=device,
+                                             token=token,
+                                             user=user,
+                                             defaults={'device': device,
+                                                       'token': token,
+                                                       'user': user})
+
