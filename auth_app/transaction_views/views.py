@@ -23,6 +23,7 @@ from auth_app.service import (update_transactions_by_controller,
                               AlreadyUpdatedByControllerError, NotWaitingTransactionError)
 from utils.custom_permissions import IsController
 from utils.paginates import process_offset_and_limit
+from utils.query_debugger import query_debugger
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +33,10 @@ class SendCoinView(CreateModelMixin, GenericAPIView):
     authentication_classes = [authentication.SessionAuthentication,
                               authentication.TokenAuthentication]
 
-    queryset = Transaction.objects.all()
+    queryset = Transaction.objects.select_related('sender__profile', 'recipient__profile')
     serializer_class = TransactionPartialSerializer
 
+    @query_debugger
     def post(self, request, *args, **kwargs):
         logger.info(f"Пользователь {request.user} отправил "
                     f"следующие данные для совершения транзакции: {request.data}")
@@ -184,8 +186,8 @@ class TransactionStatisticsAPIView(APIView):
         transaction_id = request.data.get('transaction_id')
         challenge_id = request.data.get('challenge_id')
         challenge_report_id = request.data.get('challenge_report_id')
-        content_type, object_id = get_object(content_type, object_id, None, transaction_id, challenge_id,
-                                             challenge_report_id, None)
+        content_type, object_id, _ = get_object(content_type, object_id, None, transaction_id, challenge_id,
+                                                challenge_report_id, None)
         content_type = content_type.id
         if type(include_code) != bool or type(include_name) != bool or type(include_first_comment) != bool or type(
                 include_last_comment) \
@@ -203,7 +205,8 @@ class TransactionStatisticsAPIView(APIView):
             model_class = ContentType.objects.get_for_id(content_type).model_class()
             try:
                 model_object = model_class.objects.get(id=object_id)
-                serializer = TransactionStatisticsSerializer({"content_type": content_type, "object_id": object_id}, context=context)
+                serializer = TransactionStatisticsSerializer({"content_type": content_type, "object_id": object_id},
+                                                             context=context)
                 return Response(serializer.data)
             except model_class.DoesNotExist:
                 return Response("Переданный идентификатор не относится "

@@ -2,16 +2,19 @@ import logging
 from datetime import datetime
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.db import transaction as tr
 from rest_framework.exceptions import ValidationError
 
 from auth_app.models import (Account, Event, Challenge, UserStat,
-                             ChallengeParticipant, Transaction, EventTypes)
+                             ChallengeParticipant, Transaction,
+                             EventTypes)
 from utils.crop_photos import crop_image
 from utils.current_period import get_current_period
 from utils.handle_image import change_filename
 
 logger = logging.getLogger(__name__)
+User = get_user_model()
 
 
 def create_challenge(creator, name, end_at, description, start_balance, photo, parameter_id, parameter_value):
