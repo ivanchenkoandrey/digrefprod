@@ -45,7 +45,7 @@ def update_transaction_status_in_sender_notification(sender_id, transaction_id, 
 
 
 def get_notification_message_for_thanks_receiver(sender_tg_name, amount):
-    amount_word = get_word_in_case(amount, "благодарность", "благодарности", "благодарностей")
+    amount_word = get_word_in_case(amount, "спасибку", "спасибки", "спасибок")
     return "Вам пришла благодарность", f"{sender_tg_name} отправил(а) вам {amount} {amount_word}"
 
 
