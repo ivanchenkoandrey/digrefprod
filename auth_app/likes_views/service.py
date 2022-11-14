@@ -215,10 +215,9 @@ def create_and_send_transaction_reactions_notifications(like, object_id, user):
     notification_theme_recipient, notification_text_recipient = (
         get_notification_message_for_thanks_recipient_reaction(reaction_sender=user.profile.tg_name))
     notification_data = {
-        'like_from_tg_name': user.profile.tg_name,
-        'like_from_first_name': user.profile.first_name,
-        'like_from_surname': user.profile.surname,
-        'like_from_photo': user.profile.get_thumbnail_photo_url,
+        'reaction_from_tg_name': user.profile.tg_name,
+        'reaction_from_first_name': user.profile.first_name,
+        'reaction_from_surname': user.profile.surname,
         'transaction_id': transaction_instance.id
     }
     push_data = {key: str(value) for key, value in notification_data.items()}
